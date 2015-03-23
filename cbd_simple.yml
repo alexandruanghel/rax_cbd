@@ -35,6 +35,9 @@
   hosts: gateway
   tasks:
     - command: hadoop jar /usr/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar wordcount swift://test-container.rack-lon/input_file swift://test-container.rack-lon/output_folder
+      when: hostvars.localhost.cbd_type != "HADOOP_HDP2_2"
+    - command: hadoop jar /usr/hdp/current/hadoop-mapreduce-client/hadoop-mapreduce-examples.jar wordcount swift://test-container.rack-lon/input_file swift://test-container.rack-lon/output_folder
+      when: hostvars.localhost.cbd_type == "HADOOP_HDP2_2"
 
 - name: "Delete the cluster"
   hosts: localhost
