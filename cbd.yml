@@ -1,45 +1,26 @@
 ---
-- name: "Upload file to Cloud Files"
+- name: "Build a Cloud Big Data cluster"
   hosts: localhost
   connection: local
   gather_facts: False
   tasks:
-    - name: "Download the file first"
-      get_url:
-        url: "{{ input_file_url }}"
-        dest: /tmp/{{ input_file_name }}
-        validate_certs: no
-
-    - name: "Upload the file to the Cloud Files container"
-      rax_files_objects:
-        container: "{{ cfiles_container }}"
-        region: "{{ cbd_region }}"
-        method: put
-        src: /tmp/{{ input_file_name }}
-        credentials: "{{ credentials_file }}"
-
-
-- name: "Build environment"
-  hosts: localhost
-  connection: local
-  gather_facts: False
-  tasks:
-    - name: "Create test cluster"
+    - name: "Cloud Big Data cluster create request"
       local_action:
         module: rax_cbd
-        credentials: "{{ credentials_file }}"
-        name: "{{ cbd_name }}"
-        type: "{{ cbd_type }}"
-        flavor: "{{ cbd_flavor }}"
+        credentials: "{{ rax_credentials_file }}"
+        name: "{{ cluster_name }}"
+        type: "{{ cluster_type }}"
+        flavor: "{{ cluster_flavor }}"
         nodes: "{{ cbd_nodes }}"
-        profile_username: "{{ cbd_profile_username }}"
-        profile_password: "{{ cbd_profile_password }}"
-        postinit_script: "{{ cbd_postinit_script }}"
-        sshkeyname: "{{ cbd_sshkeyname }}"
-        sshkeyfile: "{{ cbd_sshkeyfile }}"
-        region: "{{ cbd_region }}"
+        profile_username: "{{ profile_username }}"
+        profile_password: "{{ profile_password }}"
+        postinit_script: "{{ postinit_script }}"
+        sshkeyname: "{{ ssh.keyname }}"
+        sshkeyfile: "{{ ssh.keyfile }}"
+        region: "{{ rax_region }}"
         state: present
         wait: true
+        wait_timeout: 40
       register: my_cbd
 
     - debug: var=my_cbd
@@ -89,13 +70,39 @@
       yum: name=sysstat state=latest
 
 
+- name: "Upload the test file to Cloud Files"
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  tasks:
+    - name: "Download the file first"
+      get_url:
+        url: "{{ local_input.file_url }}"
+        dest: /tmp/{{ cloud_files.file_name }}
+        validate_certs: no
+
+    - name: "Create the container"
+      rax_files:
+        container: "{{ cloud_files.container }}"
+        region: "{{ rax_region }}"
+        credentials: "{{ rax_credentials_file }}"
+
+    - name: "Upload the file to the Cloud Files container"
+      rax_files_objects:
+        container: "{{ cloud_files.container }}"
+        region: "{{ rax_region }}"
+        method: put
+        src: /tmp/{{ cloud_files.file_name }}
+        credentials: "{{ rax_credentials_file }}"
+
+
 - name: "Run MR job"
   hosts: gateway
   tasks:
-    - command: hadoop jar /usr/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar wordcount swift://{{ hostvars.localhost.cfiles_container }}.rack-{{ hostvars.localhost.cbd_region|lower }}/{{ hostvars.localhost.input_file_name }} swift://{{ hostvars.localhost.cfiles_container }}.rack-{{ hostvars.localhost.cbd_region|lower }}/{{ hostvars.localhost.cfiles_output_folder }}
-      when: hostvars.localhost.cbd_type != "HADOOP_HDP2_2"
-    - command: hadoop jar /usr/hdp/current/hadoop-mapreduce-client/hadoop-mapreduce-examples.jar wordcount swift://{{ hostvars.localhost.cfiles_container }}.rack-{{ hostvars.localhost.cbd_region|lower }}/{{ hostvars.localhost.input_file_name }} swift://{{ hostvars.localhost.cfiles_container }}.rack-{{ hostvars.localhost.cbd_region|lower }}/{{ hostvars.localhost.cfiles_output_folder }}
-      when: hostvars.localhost.cbd_type == "HADOOP_HDP2_2"
+    - command: hadoop jar /usr/lib/hadoop-mapreduce/hadoop-mapreduce-examples.jar wordcount swift://{{ cloud_files.container }}.rack-{{ rax_region|lower }}/{{ cloud_files.file_name }} swift://{{ cloud_files.container }}.rack-{{ rax_region|lower }}/{{ cloud_files.output_folder }}
+      when: cluster_type != "HADOOP_HDP2_2"
+    - command: hadoop jar /usr/hdp/current/hadoop-mapreduce-client/hadoop-mapreduce-examples.jar wordcount swift://{{ cloud_files.container }}.rack-{{ rax_region|lower }}/{{ cloud_files.file_name }} swift://{{ cloud_files.container }}.rack-{{ rax_region|lower }}/{{ cloud_files.output_folder }}
+      when: cluster_type == "HADOOP_HDP2_2"
 
 
 - name: "Download result file from cloud files"
@@ -105,11 +112,11 @@
   tasks:
     - name: "Download one file from test container"
       rax_files_objects:
-        container: "{{ cfiles_container }}"
-        region: "{{ cbd_region }}"
-        src: "{{ cfiles_output_folder }}/part-r-00000"
-        credentials: "{{ credentials_file }}"
-        dest: "{{ local_output_folder }}"
+        container: "{{ cloud_files.container }}"
+        region: "{{ rax_region }}"
+        src: "{{ cloud_files.output_folder }}/part-r-00000"
+        credentials: "{{ rax_credentials_file }}"
+        dest: "{{ local_output.folder }}"
 
 
 - name: "Delete environment"
@@ -120,9 +127,9 @@
     - name: "Delete test cluster"
       local_action:
         module: rax_cbd
-        credentials: "{{ credentials_file }}"
-        name: "{{ cbd_name }}"
-        region: "{{ cbd_region }}"
+        credentials: "{{ rax_credentials_file }}"
+        name: "{{ cluster_name }}"
+        region: "{{ rax_region }}"
         state: absent
         wait: true
 
